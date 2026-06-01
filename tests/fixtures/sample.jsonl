@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2026-06-01T10:00:00.000Z","cwd":"/tmp/demo-project","gitBranch":"main","message":{"role":"user","content":"Fix auth middleware"}}
+{"type":"assistant","timestamp":"2026-06-01T10:00:05.000Z","cwd":"/tmp/demo-project","gitBranch":"main","message":{"role":"assistant","content":[{"type":"text","text":"I'll inspect the auth middleware."}]}}
+{"type":"ai-title","timestamp":"2026-06-01T10:00:10.000Z","aiTitle":"Auth middleware fix"}
+{"type":"user","timestamp":"2026-06-01T11:00:00.000Z","cwd":"/tmp/demo-project","gitBranch":"main","message":{"role":"user","content":"Add DynamoDB billing alert"}}

@@ -1,0 +1,17 @@
+{
+  "name": "retroscope",
+  "owner": {
+    "name": "naosuke"
+  },
+  "metadata": {
+    "description": "Analyze Claude Code sessions — standup, search, and metrics",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "retroscope",
+      "description": "Structured analysis and work reports from Claude Code session history",
+      "source": "./"
+    }
+  ]
+}
