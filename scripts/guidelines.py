@@ -183,6 +183,60 @@ CATALOG: dict[str, Guideline] = {g.id: g for g in [
         source_url=f"{_BASE}#use-subagents-for-investigation",
         default_severity="medium",
     ),
+    Guideline(
+        id="compact-context",
+        category="cost",
+        title="Use /compact to reduce cache creation mid-session",
+        recommendation=(
+            "Run `/compact` to compress conversation history mid-session without losing progress. "
+            "For more control, run `/compact <instructions>` like "
+            "`/compact Focus on the API changes` to guide what gets preserved."
+        ),
+        detail=(
+            "Cache creation tokens are billed at write-time and recur every time the context grows. "
+            "High cache_create ratio means you're paying to cache content that could be summarized away. "
+            "Auto compaction triggers near context limits; run /compact proactively to stay ahead of it. "
+            "Customize what survives in CLAUDE.md: "
+            "'When compacting, always preserve the full list of modified files and any test commands.'"
+        ),
+        source_url=f"{_BASE}#manage-context-aggressively",
+        default_severity="high",
+    ),
+    Guideline(
+        id="session-length",
+        category="cost",
+        title="Split long sessions to reduce cumulative token cost",
+        recommendation=(
+            "Use `/clear` between unrelated tasks, or start a new session for each distinct workstream. "
+            "Resume with `claude --continue` or `claude --resume` instead of re-pasting context."
+        ),
+        detail=(
+            "Context is the most important resource to manage — LLM performance degrades as it fills, "
+            "and every turn in a long session carries the full accumulated context as input cost. "
+            "A session with 15+ turns and 200k+ input tokens is a signal to split: "
+            "finish the current task, commit, then start fresh for the next one."
+        ),
+        source_url=f"{_BASE}#manage-context-aggressively",
+        default_severity="medium",
+    ),
+    Guideline(
+        id="subagent-scope",
+        category="cost",
+        title="Scope subagents narrowly to avoid runaway token usage",
+        recommendation=(
+            "Tell subagents exactly what files or directories to explore. "
+            "The infinite exploration failure: asking Claude to 'investigate' without scoping "
+            "causes it to read hundreds of files, multiplying cost across parallel contexts."
+        ),
+        detail=(
+            "Subagents run in their own context windows, so their token usage is additive. "
+            "A broadly-scoped research subagent can consume as much as the main session. "
+            "Prefer: 'use a subagent to check only src/auth/ for token refresh handling' "
+            "over: 'use a subagent to investigate authentication'."
+        ),
+        source_url=f"{_BASE}#use-subagents-for-investigation",
+        default_severity="low",
+    ),
 ]}
 
 

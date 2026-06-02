@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from guidelines import Guideline, get as get_guideline
 from paths import format_path
 from queries import _iso, parse_period, token_totals_by_day, token_totals_by_session
 
@@ -20,6 +21,7 @@ class CostTip:
     detail: str | None = None
     session_id: str | None = None
     cwd: str | None = None
+    guideline: Guideline | None = field(default=None, compare=False)
 
 
 def analyze_cost_tips(
@@ -57,6 +59,7 @@ def analyze_cost_tips(
 
     # High cache_create ratio
     if include("cache"):
+        gl = get_guideline("compact-context")
         for row in session_totals:
             total_in = (row["input_tokens"] or 0) + (row["cache_read_tokens"] or 0)
             cache_create = row["cache_create_tokens"] or 0
@@ -69,19 +72,18 @@ def analyze_cost_tips(
             tips.append(
                 CostTip(
                     category="cache",
-                    severity="high",
-                    message=f"High cache creation in «{label}» ({ratio:.0%} of input)",
-                    detail=(
-                        f"cache_create={cache_create:,}, input={total_in:,}. "
-                        "Try `/compact`, shorter context, or `/clear` between tasks."
-                    ),
+                    severity=gl.default_severity,
+                    message=f"High cache creation in «{label}» ({ratio:.0%} of input, {cache_create:,} tokens)",
+                    detail=gl.recommendation,
                     session_id=row["session_id"],
                     cwd=row["cwd"],
+                    guideline=gl,
                 )
             )
 
-    # Long sessions (turns × tokens)
+    # Long sessions (turns x tokens)
     if include("long_sessions"):
+        gl = get_guideline("session-length")
         rows = conn.execute(
             f"""
             SELECT s.session_id, s.cwd, s.title, m.user_turns,
@@ -112,19 +114,18 @@ def analyze_cost_tips(
             tips.append(
                 CostTip(
                     category="long_sessions",
-                    severity="medium",
+                    severity=gl.default_severity,
                     message=f"Long session «{label}» — {row['user_turns']} turns, ~{total:,} input tokens",
-                    detail=(
-                        "Split work across sessions or use `/compact` mid-task. "
-                        "Resume with `claude --resume` instead of re-pasting context."
-                    ),
+                    detail=gl.recommendation,
                     session_id=row["session_id"],
                     cwd=row["cwd"],
+                    guideline=gl,
                 )
             )
 
     # Repeated skill reads + high cache_create
     if include("skills"):
+        gl = get_guideline("skills-on-demand")
         rows = conn.execute(
             f"""
             SELECT s.session_id, s.cwd, s.title,
@@ -148,20 +149,22 @@ def analyze_cost_tips(
             tips.append(
                 CostTip(
                     category="skills",
-                    severity="medium",
-                    message=f"Repeated skill reads drove cache cost in «{label}»",
-                    detail=(
-                        f"{row['repeated_skill_reads']} redundant SKILL.md reads, "
-                        f"cache_create={row['cache_create']:,}. "
-                        "Specify skills in your prompt to avoid re-reading."
+                    severity=gl.default_severity,
+                    message=(
+                        f"Repeated skill reads added cache cost in «{label}» — "
+                        f"{row['repeated_skill_reads']} redundant reads, "
+                        f"cache_create={row['cache_create']:,}"
                     ),
+                    detail=gl.recommendation,
                     session_id=row["session_id"],
                     cwd=row["cwd"],
+                    guideline=gl,
                 )
             )
 
     # Subagent token cost
     if include("subagents") and include_subagents:
+        gl = get_guideline("subagent-scope")
         rows = conn.execute(
             """
             SELECT s.session_id, s.cwd, s.title,
@@ -185,11 +188,12 @@ def analyze_cost_tips(
             tips.append(
                 CostTip(
                     category="subagents",
-                    severity="low",
-                    message=f"Subagent session «{label}» used ~{total:,} input tokens",
-                    detail="Review whether subagent scope could be narrowed or batched.",
+                    severity=gl.default_severity,
+                    message=f"Subagent «{label}» used ~{total:,} input tokens",
+                    detail=gl.recommendation,
                     session_id=row["session_id"],
                     cwd=row["cwd"],
+                    guideline=gl,
                 )
             )
 
@@ -212,7 +216,7 @@ def format_cost_tips(
     lines = [
         f"## Cost Tips — since {period_label}",
         "",
-        "_Deterministic token analysis (offline)._",
+        "_Grounded in [Anthropic Claude Code best practices](https://code.claude.com/docs/en/best-practices). Offline token analysis._",
         "",
     ]
 
@@ -272,9 +276,15 @@ def format_cost_tips(
             badge = {"high": "!!", "medium": "!", "low": "·"}.get(tip.severity, "·")
             lines.append(f"**{i}. [{badge}] {tip.message}**")
             if tip.detail:
+                lines.append("")
                 lines.append(tip.detail)
+            if tip.guideline:
+                gl = tip.guideline
+                lines.append("")
+                lines.append(f"**Why**: {gl.detail}")
+                lines.append(f"**Source**: [{gl.title}]({gl.source_url})")
             if tip.cwd:
-                lines.append(f"- `{format_path(tip.cwd)}`")
+                lines.append(f"**Project**: `{format_path(tip.cwd)}`")
             lines.append("")
     elif not daily and not session_totals:
         lines.append("_No token usage data in this period._")
