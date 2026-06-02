@@ -1,12 +1,13 @@
-"""Workflow tips from deterministic session analysis."""
+"""Workflow tips grounded in official Anthropic Claude Code guidelines."""
 
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from guidelines import Guideline, get as get_guideline
 from paths import format_path
 from queries import _iso, parse_period
 
@@ -22,6 +23,7 @@ class Tip:
     detail: str | None = None
     session_id: str | None = None
     cwd: str | None = None
+    guideline: Guideline | None = field(default=None, compare=False)
 
 
 def _parse_ts(value: str | None) -> datetime | None:
@@ -77,6 +79,7 @@ def analyze_tips(
 
     # Repeated SKILL.md reads
     if include("skills"):
+        gl = get_guideline("skills-on-demand")
         rows = conn.execute(
             f"""
             SELECT s.session_id, s.cwd, s.title, m.repeated_skill_reads, m.skill_reads
@@ -95,20 +98,22 @@ def analyze_tips(
             tips.append(
                 Tip(
                     category="skills",
-                    severity="high",
-                    message=f"Same SKILL.md read repeatedly in session «{label}»",
+                    severity=gl.default_severity,
+                    message=f"Same SKILL.md read {row['repeated_skill_reads']} extra time(s) in «{label}»",
                     detail=(
-                        f"{row['skill_reads']} skill reads "
-                        f"({row['repeated_skill_reads']} redundant). "
-                        "Mention the skill in your prompt or add a project rule."
+                        f"{row['skill_reads']} total skill reads, "
+                        f"{row['repeated_skill_reads']} redundant. "
+                        f"{gl.recommendation}"
                     ),
                     session_id=row["session_id"],
                     cwd=row["cwd"],
+                    guideline=gl,
                 )
             )
 
     # Short session proliferation (same cwd)
     if include("short_sessions"):
+        gl = get_guideline("resume-sessions")
         rows = conn.execute(
             f"""
             SELECT s.session_id, s.cwd, s.title, s.started_at, s.ended_at,
@@ -133,18 +138,20 @@ def analyze_tips(
             tips.append(
                 Tip(
                     category="short_sessions",
-                    severity="medium",
-                    message=f"{len(sessions)} short sessions (<{SHORT_SESSION_MINUTES}m) in {format_path(cwd)}",
-                    detail=(
-                        "Consider resuming one session instead of starting fresh. "
-                        "Use `claude --resume` or `/compact` to keep context."
+                    severity=gl.default_severity,
+                    message=(
+                        f"{len(sessions)} short sessions (<{SHORT_SESSION_MINUTES}m) "
+                        f"in {format_path(cwd)}"
                     ),
+                    detail=gl.recommendation,
                     cwd=cwd,
+                    guideline=gl,
                 )
             )
 
     # High paste ratio vs Read tool usage
     if include("paste"):
+        gl = get_guideline("file-reference")
         rows = conn.execute(
             f"""
             SELECT s.session_id, s.cwd, s.title,
@@ -171,19 +178,18 @@ def analyze_tips(
             tips.append(
                 Tip(
                     category="paste",
-                    severity="medium",
-                    message=f"Large pasted content in «{label}» — prefer @-mentions or Read",
-                    detail=(
-                        f"~{row['pasted_chars']:,} chars pasted vs {read_calls} Read calls. "
-                        "Reference files with @path or let Claude read them."
-                    ),
+                    severity=gl.default_severity,
+                    message=f"~{row['pasted_chars']:,} chars pasted in «{label}» with only {read_calls} @ reads",
+                    detail=gl.recommendation,
                     session_id=row["session_id"],
                     cwd=row["cwd"],
+                    guideline=gl,
                 )
             )
 
     # Correction signals
     if include("corrections"):
+        gl = get_guideline("specific-prompts")
         rows = conn.execute(
             f"""
             SELECT s.session_id, s.cwd, s.title, m.correction_signals, m.user_turns
@@ -202,20 +208,21 @@ def analyze_tips(
             tips.append(
                 Tip(
                     category="corrections",
-                    severity="high",
-                    message=f"Multiple corrections in «{label}» — refine instructions",
-                    detail=(
-                        f"{row['correction_signals']} correction signals in "
-                        f"{row['user_turns']} turns. Add constraints to CLAUDE.md or "
-                        "be more specific upfront."
+                    severity=gl.default_severity,
+                    message=(
+                        f"{row['correction_signals']} correction signal(s) in «{label}» "
+                        f"({row['user_turns']} turns)"
                     ),
+                    detail=gl.recommendation,
                     session_id=row["session_id"],
                     cwd=row["cwd"],
+                    guideline=gl,
                 )
             )
 
     # Multi-step without plan mode (slug proxy)
     if include("planning"):
+        gl = get_guideline("plan-mode")
         rows = conn.execute(
             f"""
             SELECT s.session_id, s.cwd, s.title, m.user_turns, m.tool_calls
@@ -236,14 +243,15 @@ def analyze_tips(
             tips.append(
                 Tip(
                     category="planning",
-                    severity="low",
-                    message=f"Multi-step work in «{label}» without plan mode",
-                    detail=(
-                        f"{row['user_turns']} turns, {row['tool_calls']} tool calls. "
-                        "Try plan mode for complex tasks to reduce back-and-forth."
+                    severity=gl.default_severity,
+                    message=(
+                        f"Multi-step session «{label}» — "
+                        f"{row['user_turns']} turns, {row['tool_calls']} tool calls"
                     ),
+                    detail=gl.recommendation,
                     session_id=row["session_id"],
                     cwd=row["cwd"],
+                    guideline=gl,
                 )
             )
 
@@ -267,7 +275,7 @@ def format_tips(
     lines = [
         f"## Workflow Tips — since {period_label}",
         "",
-        "_Deterministic analysis (offline). Use `--llm` in Phase 3 for narrative tips._",
+        "_Grounded in [Anthropic Claude Code best practices](https://code.claude.com/docs/en/best-practices). Offline analysis._",
         "",
     ]
 
@@ -279,9 +287,15 @@ def format_tips(
         badge = {"high": "!!", "medium": "!", "low": "·"}.get(tip.severity, "·")
         lines.append(f"### {i}. [{badge}] {tip.message}")
         if tip.detail:
+            lines.append("")
             lines.append(tip.detail)
+        if tip.guideline:
+            lines.append("")
+            gl = tip.guideline
+            lines.append(f"**Why**: {gl.detail}")
+            lines.append(f"**Source**: [{gl.title}]({gl.source_url})")
         if tip.cwd:
-            lines.append(f"- Project: `{format_path(tip.cwd)}`")
+            lines.append(f"**Project**: `{format_path(tip.cwd)}`")
         lines.append("")
 
     lines.append(f"_{len(tips)} tip(s) found._")

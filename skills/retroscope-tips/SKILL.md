@@ -1,6 +1,6 @@
 ---
 name: retroscope-tips
-description: Workflow improvement tips from Claude Code session patterns (skills, prompting, sessions).
+description: Workflow improvement tips grounded in Anthropic's official Claude Code best practices.
 argument-hint: [--since 24h|3d|7d] [--focus prompting|skills|sessions|planning]
 allowed-tools: mcp__plugin_retroscope_retroscope__*
 ---
@@ -20,7 +20,7 @@ Analyze indexed Claude Code sessions for workflow improvement opportunities.
    - SKILL.md re-reads → `focus="skills"`
    - short session churn → `focus="sessions"`
    - plan mode → `focus="planning"`
-3. Present tips by severity; include project paths and concrete next steps.
+3. Present tips by severity. Each tip includes the official Anthropic recommendation and a source link — relay these to the user verbatim.
 4. If no data, suggest `retroscope_reindex`.
 
-Default is **offline** — deterministic analysis only.
+Default is **offline** — grounded in [Anthropic Claude Code best practices](https://code.claude.com/docs/en/best-practices).
