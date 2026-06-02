@@ -4,8 +4,8 @@
     "name": "naosuke"
   },
   "metadata": {
-    "description": "Analyze Claude Code sessions — standup, search, and metrics",
-    "version": "0.1.0"
+    "description": "Analyze Claude Code sessions — standup, search, tips, cost-tips",
+    "version": "0.2.0"
   },
   "plugins": [
     {

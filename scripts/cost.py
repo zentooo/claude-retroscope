@@ -1,0 +1,284 @@
+"""Token cost analysis and cost-reduction tips."""
+
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass
+from typing import Any
+
+from paths import format_path
+from queries import _iso, parse_period, token_totals_by_day, token_totals_by_session
+
+FOCUS_AREAS = frozenset({"cache", "sessions", "skills", "subagents"})
+
+
+@dataclass
+class CostTip:
+    category: str
+    severity: str
+    message: str
+    detail: str | None = None
+    session_id: str | None = None
+    cwd: str | None = None
+
+
+def analyze_cost_tips(
+    conn: sqlite3.Connection,
+    *,
+    since: str | None = None,
+    focus: str | None = None,
+    include_subagents: bool = False,
+) -> list[CostTip]:
+    period_start = parse_period(since)
+    since_iso = _iso(period_start)
+    focus_norm = focus.lower() if focus else None
+    if focus_norm and focus_norm not in FOCUS_AREAS:
+        raise ValueError(
+            f"Unknown focus {focus!r}. Choose from: {', '.join(sorted(FOCUS_AREAS))}"
+        )
+
+    tips: list[CostTip] = []
+    subagent_clause = "" if include_subagents else "AND s.is_subagent = 0"
+
+    def include(category: str) -> bool:
+        if not focus_norm:
+            return True
+        mapping = {
+            "cache": {"cache"},
+            "sessions": {"long_sessions", "daily"},
+            "skills": {"skills"},
+            "subagents": {"subagents"},
+        }
+        return category in mapping.get(focus_norm, set())
+
+    session_totals = token_totals_by_session(
+        conn, since_iso, include_subagents=include_subagents
+    )
+
+    # High cache_create ratio
+    if include("cache"):
+        for row in session_totals:
+            total_in = (row["input_tokens"] or 0) + (row["cache_read_tokens"] or 0)
+            cache_create = row["cache_create_tokens"] or 0
+            if total_in < 50000:
+                continue
+            ratio = cache_create / total_in if total_in else 0
+            if ratio < 0.25:
+                continue
+            label = row["title"] or row["session_id"][:8]
+            tips.append(
+                CostTip(
+                    category="cache",
+                    severity="high",
+                    message=f"High cache creation in «{label}» ({ratio:.0%} of input)",
+                    detail=(
+                        f"cache_create={cache_create:,}, input={total_in:,}. "
+                        "Try `/compact`, shorter context, or `/clear` between tasks."
+                    ),
+                    session_id=row["session_id"],
+                    cwd=row["cwd"],
+                )
+            )
+
+    # Long sessions (turns × tokens)
+    if include("long_sessions"):
+        rows = conn.execute(
+            f"""
+            SELECT s.session_id, s.cwd, s.title, m.user_turns,
+                   COALESCE(SUM(t.input_tokens), 0) AS input_tokens,
+                   COALESCE(SUM(t.output_tokens), 0) AS output_tokens,
+                   COALESCE(SUM(t.cache_read_tokens), 0) AS cache_read,
+                   COALESCE(SUM(t.cache_create_tokens), 0) AS cache_create
+            FROM sessions s
+            JOIN session_metrics m ON m.session_id = s.session_id
+            LEFT JOIN token_usage t ON t.session_id = s.session_id
+            WHERE s.ended_at >= ?
+              {subagent_clause}
+            GROUP BY s.session_id
+            HAVING m.user_turns >= 15
+               AND (input_tokens + cache_read + cache_create) >= 200000
+            ORDER BY (input_tokens + cache_read + cache_create) DESC
+            LIMIT 8
+            """,
+            (since_iso,),
+        ).fetchall()
+        for row in rows:
+            total = (
+                (row["input_tokens"] or 0)
+                + (row["cache_read"] or 0)
+                + (row["cache_create"] or 0)
+            )
+            label = row["title"] or row["session_id"][:8]
+            tips.append(
+                CostTip(
+                    category="long_sessions",
+                    severity="medium",
+                    message=f"Long session «{label}» — {row['user_turns']} turns, ~{total:,} input tokens",
+                    detail=(
+                        "Split work across sessions or use `/compact` mid-task. "
+                        "Resume with `claude --resume` instead of re-pasting context."
+                    ),
+                    session_id=row["session_id"],
+                    cwd=row["cwd"],
+                )
+            )
+
+    # Repeated skill reads + high cache_create
+    if include("skills"):
+        rows = conn.execute(
+            f"""
+            SELECT s.session_id, s.cwd, s.title,
+                   m.repeated_skill_reads,
+                   COALESCE(SUM(t.cache_create_tokens), 0) AS cache_create
+            FROM sessions s
+            JOIN session_metrics m ON m.session_id = s.session_id
+            LEFT JOIN token_usage t ON t.session_id = s.session_id
+            WHERE s.ended_at >= ?
+              {subagent_clause}
+              AND m.repeated_skill_reads >= 2
+            GROUP BY s.session_id
+            HAVING cache_create >= 30000
+            ORDER BY cache_create DESC
+            LIMIT 6
+            """,
+            (since_iso,),
+        ).fetchall()
+        for row in rows:
+            label = row["title"] or row["session_id"][:8]
+            tips.append(
+                CostTip(
+                    category="skills",
+                    severity="medium",
+                    message=f"Repeated skill reads drove cache cost in «{label}»",
+                    detail=(
+                        f"{row['repeated_skill_reads']} redundant SKILL.md reads, "
+                        f"cache_create={row['cache_create']:,}. "
+                        "Specify skills in your prompt to avoid re-reading."
+                    ),
+                    session_id=row["session_id"],
+                    cwd=row["cwd"],
+                )
+            )
+
+    # Subagent token cost
+    if include("subagents") and include_subagents:
+        rows = conn.execute(
+            """
+            SELECT s.session_id, s.cwd, s.title,
+                   COALESCE(SUM(t.input_tokens), 0) AS input_tokens,
+                   COALESCE(SUM(t.output_tokens), 0) AS output_tokens,
+                   COALESCE(SUM(t.cache_create_tokens), 0) AS cache_create
+            FROM sessions s
+            LEFT JOIN token_usage t ON t.session_id = s.session_id
+            WHERE s.is_subagent = 1
+              AND s.ended_at >= ?
+            GROUP BY s.session_id
+            HAVING (input_tokens + cache_create) >= 50000
+            ORDER BY (input_tokens + cache_create) DESC
+            LIMIT 6
+            """,
+            (since_iso,),
+        ).fetchall()
+        for row in rows:
+            total = (row["input_tokens"] or 0) + (row["cache_create"] or 0)
+            label = row["title"] or row["session_id"][:8]
+            tips.append(
+                CostTip(
+                    category="subagents",
+                    severity="low",
+                    message=f"Subagent session «{label}» used ~{total:,} input tokens",
+                    detail="Review whether subagent scope could be narrowed or batched.",
+                    session_id=row["session_id"],
+                    cwd=row["cwd"],
+                )
+            )
+
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    tips.sort(key=lambda t: severity_order.get(t.severity, 9))
+    return tips[:12]
+
+
+def format_cost_tips(
+    conn: sqlite3.Connection,
+    *,
+    since: str | None = None,
+    focus: str | None = None,
+    include_subagents: bool = False,
+) -> str:
+    period_label = since or "24h"
+    period_start = parse_period(since)
+    since_iso = _iso(period_start)
+
+    lines = [
+        f"## Cost Tips — since {period_label}",
+        "",
+        "_Deterministic token analysis (offline)._",
+        "",
+    ]
+
+    # Summary table
+    daily = token_totals_by_day(conn, since_iso, include_subagents=include_subagents)
+    if daily:
+        lines.append("### Daily token usage")
+        lines.append("")
+        lines.append("| Date | Input | Output | Cache read | Cache create |")
+        lines.append("|------|------:|-------:|-----------:|-------------:|")
+        for row in daily[:14]:
+            lines.append(
+                f"| {row['day']} "
+                f"| {(row['input_tokens'] or 0):,} "
+                f"| {(row['output_tokens'] or 0):,} "
+                f"| {(row['cache_read_tokens'] or 0):,} "
+                f"| {(row['cache_create_tokens'] or 0):,} |"
+            )
+        lines.append("")
+
+    session_totals = token_totals_by_session(
+        conn, since_iso, include_subagents=include_subagents
+    )
+    if session_totals:
+        top = session_totals[:5]
+        lines.append("### Top sessions by input tokens")
+        lines.append("")
+        for row in top:
+            total_in = (
+                (row["input_tokens"] or 0)
+                + (row["cache_read_tokens"] or 0)
+                + (row["cache_create_tokens"] or 0)
+            )
+            label = row["title"] or row["session_id"][:8]
+            cwd = format_path(row["cwd"])
+            lines.append(
+                f"- **{label}** ({cwd}): {total_in:,} input "
+                f"(out {(row['output_tokens'] or 0):,})"
+            )
+        lines.append("")
+
+    try:
+        tips = analyze_cost_tips(
+            conn,
+            since=since,
+            focus=focus,
+            include_subagents=include_subagents,
+        )
+    except ValueError as exc:
+        lines.append(f"Error: {exc}")
+        return "\n".join(lines)
+
+    if tips:
+        lines.append("### Recommendations")
+        lines.append("")
+        for i, tip in enumerate(tips, 1):
+            badge = {"high": "!!", "medium": "!", "low": "·"}.get(tip.severity, "·")
+            lines.append(f"**{i}. [{badge}] {tip.message}**")
+            if tip.detail:
+                lines.append(tip.detail)
+            if tip.cwd:
+                lines.append(f"- `{format_path(tip.cwd)}`")
+            lines.append("")
+    elif not daily and not session_totals:
+        lines.append("_No token usage data in this period._")
+    else:
+        lines.append("_No cost issues detected — usage looks reasonable._")
+
+    return "\n".join(lines).rstrip()

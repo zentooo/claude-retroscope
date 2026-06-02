@@ -28,7 +28,7 @@ def fixture_projects(tmp_path, monkeypatch):
 
 def test_ingest_and_search(fixture_projects):
     stats = ingest.ingest_all()
-    assert stats["lines_ingested"] >= 4
+    assert stats["lines_ingested"] >= 8
 
     conn = store.ensure_db()
     row = conn.execute(

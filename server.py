@@ -14,10 +14,12 @@ sys.path.insert(0, str(Path(__file__).parent / "scripts"))
 
 from mcp.server.fastmcp import FastMCP
 
+from cost import format_cost_tips
 from ingest import ingest_all, reindex
 from search_fmt import format_search
 from standup import format_standup
 from store import db_stats, ensure_db
+from tips import format_tips
 
 mcp = FastMCP("retroscope")
 
@@ -53,6 +55,44 @@ def retroscope_search(
 
 
 @mcp.tool()
+def retroscope_tips(
+    since: str | None = None,
+    focus: str | None = None,
+    include_subagents: bool = False,
+) -> str:
+    """Analyze workflow patterns and suggest actionable improvements (offline).
+
+    Args:
+        since: Time period like 24h, 3d, 7d, or ISO date. Default 24h.
+        focus: Optional category — prompting, skills, sessions, planning.
+        include_subagents: Include subagent session logs.
+    """
+    _refresh(include_subagents)
+    conn = ensure_db()
+    return format_tips(conn, since=since, focus=focus)
+
+
+@mcp.tool()
+def retroscope_cost_tips(
+    since: str | None = None,
+    focus: str | None = None,
+    include_subagents: bool = False,
+) -> str:
+    """Analyze token usage and suggest cost-reduction tips (offline).
+
+    Args:
+        since: Time period like 24h, 3d, 7d, or ISO date. Default 24h.
+        focus: Optional category — cache, sessions, skills, subagents.
+        include_subagents: Include subagent session logs.
+    """
+    _refresh(include_subagents)
+    conn = ensure_db()
+    return format_cost_tips(
+        conn, since=since, focus=focus, include_subagents=include_subagents
+    )
+
+
+@mcp.tool()
 def retroscope_status(include_subagents: bool = False) -> str:
     """Show Retroscope index status (sessions, events, pending ingest)."""
     conn = ensure_db()
@@ -61,6 +101,9 @@ def retroscope_status(include_subagents: bool = False) -> str:
     return (
         f"Sessions: {stats['sessions']}\n"
         f"Events: {stats['events']}\n"
+        f"Token rows: {stats['token_rows']}\n"
+        f"Metrics: {stats['metrics_rows']}\n"
+        f"FTS indexed: {stats['fts_rows']}\n"
         f"Ingested files: {stats['ingested_files']}\n"
         f"Last ingest: {stats['last_ingest_at'] or 'never'}\n"
         f"Pending files: {pending}"

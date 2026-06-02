@@ -669,10 +669,10 @@ retroscope/
 
 ### Phase 2 — 分析
 
-- [ ] `token_usage` 集計
-- [ ] `session_metrics` 算出
-- [ ] `tips`, `cost-tips`（オフライン出力）
-- [ ] FTS5 検索（任意）
+- [x] `token_usage` 集計
+- [x] `session_metrics` 算出
+- [x] `tips`, `cost-tips`（オフライン出力）
+- [x] FTS5 検索（任意）
 
 ### Phase 3 — improve + LLM
 

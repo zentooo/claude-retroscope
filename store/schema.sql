@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 
+-- FTS5 full-text search (Phase 2)
+CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+  text,
+  session_id UNINDEXED,
+  role UNINDEXED,
+  event_id UNINDEXED,
+  tokenize='unicode61'
+);
+
 CREATE TABLE IF NOT EXISTS token_usage (
   id                  INTEGER PRIMARY KEY,
   session_id          TEXT NOT NULL,

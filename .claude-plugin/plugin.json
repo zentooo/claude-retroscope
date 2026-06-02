@@ -1,6 +1,6 @@
 {
   "name": "retroscope",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Structured analysis and work reports from Claude Code session history",
   "author": {
     "name": "naosuke"

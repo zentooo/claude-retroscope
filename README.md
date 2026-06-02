@@ -23,6 +23,10 @@ Or standalone CLI:
 ```bash
 uv run --script retroscope.py standup
 uv run --script retroscope.py search "auth"
+uv run --script retroscope.py tips
+uv run --script retroscope.py tips --since 7d --focus skills
+uv run --script retroscope.py cost-tips
+uv run --script retroscope.py cost-tips --since 7d
 uv run --script retroscope.py status
 uv run --script retroscope.py reindex
 ```
@@ -33,6 +37,8 @@ uv run --script retroscope.py reindex
 |-------|---------|
 | `/retroscope-standup` | Work recap (default: past 24h) |
 | `/retroscope-search` | Keyword search across sessions |
+| `/retroscope-tips` | Workflow improvement tips |
+| `/retroscope-cost-tips` | Token cost analysis and tips |
 
 ## Data sources
 
@@ -49,6 +55,7 @@ Phase 1 is fully offline. Future `--llm` modes may send aggregated summaries to 
 
 - ✅ Phase 1: JSONL ingest, standup, search, reindex, status, MCP plugin
 - ⏳ Phase 1.5: Desktop `local_*.json` index join
-- ⏳ Phase 2+: tips, cost-tips, improve, FTS5
+- ✅ Phase 2: token_usage 集計, session_metrics, tips, cost-tips, FTS5 検索
+- ⏳ Phase 3+: improve, `--llm`
 
 See [claude-retroscope.md](./claude-retroscope.md) for the full design doc.

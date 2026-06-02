@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from metrics import refresh_metrics
 from parser import LineParseResult, parse_jsonl_line
 from paths import projects_dir
 from store import ensure_db, utc_now as _utc_now
@@ -64,13 +65,34 @@ def _ensure_session(
     )
 
 
+def _index_event_fts(
+    conn: sqlite3.Connection,
+    event_id: int,
+    session_id: str,
+    role: str | None,
+    text: str | None,
+) -> None:
+    if not text or not text.strip():
+        return
+    try:
+        conn.execute(
+            """
+            INSERT INTO events_fts (event_id, session_id, role, text)
+            VALUES (?, ?, ?, ?)
+            """,
+            (event_id, session_id, role or "", text),
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
 def _apply_line_result(
     conn: sqlite3.Connection,
     session_id: str,
     result: LineParseResult,
 ) -> None:
     for event in result.events:
-        conn.execute(
+        cur = conn.execute(
             """
             INSERT INTO events (
               session_id, event_type, timestamp, role, git_branch, cwd,
@@ -91,6 +113,14 @@ def _apply_line_result(
                 event.is_error,
             ),
         )
+        if event.text:
+            _index_event_fts(
+                conn,
+                cur.lastrowid,
+                session_id,
+                event.role,
+                event.text,
+            )
 
     if result.token_usage:
         u = result.token_usage
@@ -203,6 +233,12 @@ def ingest_file(conn: sqlite3.Connection, path: Path, root: Path) -> int:
     return new_lines
 
 
+def _metrics_stale(conn: sqlite3.Connection) -> bool:
+    sessions = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    metrics = conn.execute("SELECT COUNT(*) FROM session_metrics").fetchone()[0]
+    return metrics < sessions
+
+
 def ingest_all(
     *,
     root: Path | None = None,
@@ -230,6 +266,9 @@ def ingest_all(
             changed_files += 1
         total_lines += lines
 
+    if total_lines > 0 or changed_files > 0 or _metrics_stale(conn):
+        refresh_metrics(conn)
+
     conn.commit()
     pending = _count_pending_files(conn, base, include_subagents)
     return {
@@ -249,6 +288,7 @@ def reindex(
     conn = ensure_db(db)
     conn.executescript(
         """
+        DELETE FROM events_fts;
         DELETE FROM events;
         DELETE FROM token_usage;
         DELETE FROM session_metrics;

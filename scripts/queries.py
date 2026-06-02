@@ -64,6 +64,21 @@ def sessions_in_period(
     return conn.execute(query, params).fetchall()
 
 
+def _fts_available(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='events_fts'"
+    ).fetchone()
+    return row is not None
+
+
+def _fts_match_query(tokens: list[str]) -> str:
+    parts = []
+    for token in tokens:
+        escaped = token.replace('"', '""')
+        parts.append(f'"{escaped}"')
+    return " AND ".join(parts)
+
+
 def search_events(
     conn: sqlite3.Connection,
     query: str,
@@ -71,12 +86,69 @@ def search_events(
     limit: int = 20,
     project: str | None = None,
 ) -> list[dict]:
-    tokens = [t.lower() for t in query.split() if t]
+    tokens = [t for t in query.split() if t]
     if not tokens:
         return []
 
-    where = " AND ".join(["LOWER(e.text) LIKE ?"] * len(tokens))
-    params: list[Any] = [f"%{t}%" for t in tokens]
+    if _fts_available(conn):
+        try:
+            results = _search_events_fts(conn, tokens, limit=limit, project=project)
+            return results
+        except sqlite3.OperationalError:
+            pass
+
+    return _search_events_like(conn, tokens, limit=limit, project=project)
+
+
+def _search_events_fts(
+    conn: sqlite3.Connection,
+    tokens: list[str],
+    *,
+    limit: int = 20,
+    project: str | None = None,
+) -> list[dict]:
+    match = _fts_match_query(tokens)
+    params: list[Any] = [match]
+    sql = """
+        SELECT
+          s.session_id,
+          s.cwd,
+          s.title,
+          s.ended_at,
+          f.role,
+          f.text,
+          e.timestamp,
+          bm25(events_fts) AS rank
+        FROM events_fts f
+        JOIN events e ON e.id = f.event_id
+        JOIN sessions s ON s.session_id = f.session_id
+        WHERE events_fts MATCH ?
+          AND s.is_subagent = 0
+    """
+    if project:
+        sql += " AND (s.cwd LIKE ? OR s.project_key LIKE ?)"
+        params.extend([f"%{project}%", f"%{project}%"])
+    sql += " ORDER BY rank LIMIT ?"
+    params.append(limit * 8)
+
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as exc:
+        raise exc
+
+    return _group_search_rows(rows, tokens, limit)
+
+
+def _search_events_like(
+    conn: sqlite3.Connection,
+    tokens: list[str],
+    *,
+    limit: int = 20,
+    project: str | None = None,
+) -> list[dict]:
+    lower_tokens = [t.lower() for t in tokens]
+    where = " AND ".join(["LOWER(e.text) LIKE ?"] * len(lower_tokens))
+    params: list[Any] = [f"%{t}%" for t in lower_tokens]
 
     sql = f"""
         SELECT
@@ -98,6 +170,14 @@ def search_events(
         params.extend([f"%{project}%", f"%{project}%"])
 
     rows = conn.execute(sql, params).fetchall()
+    return _group_search_rows(rows, lower_tokens, limit)
+
+
+def _group_search_rows(
+    rows: list[sqlite3.Row],
+    tokens: list[str],
+    limit: int,
+) -> list[dict]:
     grouped: dict[str, dict] = {}
 
     for row in rows:
@@ -123,6 +203,63 @@ def search_events(
         reverse=True,
     )
     return results[:limit]
+
+
+def token_totals_by_session(
+    conn: sqlite3.Connection,
+    since_iso: str,
+    *,
+    include_subagents: bool = False,
+) -> list[sqlite3.Row]:
+    subagent_clause = "" if include_subagents else "AND s.is_subagent = 0"
+    return conn.execute(
+        f"""
+        SELECT
+          s.session_id,
+          s.cwd,
+          s.title,
+          s.ended_at,
+          COALESCE(SUM(t.input_tokens), 0) AS input_tokens,
+          COALESCE(SUM(t.output_tokens), 0) AS output_tokens,
+          COALESCE(SUM(t.cache_read_tokens), 0) AS cache_read_tokens,
+          COALESCE(SUM(t.cache_create_tokens), 0) AS cache_create_tokens
+        FROM sessions s
+        LEFT JOIN token_usage t ON t.session_id = s.session_id
+        WHERE s.ended_at >= ?
+          {subagent_clause}
+        GROUP BY s.session_id
+        HAVING (input_tokens + output_tokens + cache_read_tokens + cache_create_tokens) > 0
+        ORDER BY (input_tokens + cache_read_tokens + cache_create_tokens) DESC
+        """,
+        (since_iso,),
+    ).fetchall()
+
+
+def token_totals_by_day(
+    conn: sqlite3.Connection,
+    since_iso: str,
+    *,
+    include_subagents: bool = False,
+) -> list[dict]:
+    subagent_clause = "" if include_subagents else "AND s.is_subagent = 0"
+    rows = conn.execute(
+        f"""
+        SELECT
+          DATE(t.timestamp) AS day,
+          COALESCE(SUM(t.input_tokens), 0) AS input_tokens,
+          COALESCE(SUM(t.output_tokens), 0) AS output_tokens,
+          COALESCE(SUM(t.cache_read_tokens), 0) AS cache_read_tokens,
+          COALESCE(SUM(t.cache_create_tokens), 0) AS cache_create_tokens
+        FROM token_usage t
+        JOIN sessions s ON s.session_id = t.session_id
+        WHERE t.timestamp >= ?
+          {subagent_clause}
+        GROUP BY day
+        ORDER BY day DESC
+        """,
+        (since_iso,),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def _snippet(text: str, tokens: list[str], max_len: int = 200) -> str:

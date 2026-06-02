@@ -41,9 +41,19 @@ def db_stats(conn: sqlite3.Connection) -> dict:
     last = conn.execute(
         "SELECT MAX(updated_at) FROM ingest_state"
     ).fetchone()[0]
+    token_rows = conn.execute("SELECT COUNT(*) FROM token_usage").fetchone()[0]
+    metrics_rows = conn.execute("SELECT COUNT(*) FROM session_metrics").fetchone()[0]
+    fts_rows = 0
+    try:
+        fts_rows = conn.execute("SELECT COUNT(*) FROM events_fts").fetchone()[0]
+    except sqlite3.OperationalError:
+        pass
     return {
         "sessions": sessions,
         "events": events,
         "ingested_files": ingested,
         "last_ingest_at": last,
+        "token_rows": token_rows,
+        "metrics_rows": metrics_rows,
+        "fts_rows": fts_rows,
     }
