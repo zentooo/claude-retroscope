@@ -47,6 +47,12 @@ _TOOL_PREF_RES = [
     ),
 ]
 
+# Pasted diffs / code blocks masquerading as user turns — these match
+# correction keywords by accident, so exclude them from signal detection.
+_PASTE_MARKERS = ("diff --git", "```", "<<<<<<<", "=======", ">>>>>>>", "@@ -")
+_CODE_HINTS = ('"""', "from __future__", "import ", "def ", "class ", "</", "/>")
+_MAX_CORRECTION_LEN = 600
+
 _PATH_RE = re.compile(r"(?:/[\w.@+-]+){2,}")
 _HEX_RE = re.compile(r"0x[0-9a-f]+", re.IGNORECASE)
 _NUM_RE = re.compile(r"\d+")
@@ -76,6 +82,16 @@ def _error_signature(source: str) -> str | None:
         norm = " ".join(norm.split())
         return norm[:120]
     return None
+
+
+def _looks_like_paste(text: str) -> bool:
+    """A user turn that is really pasted code/diff, not a course-correction."""
+    if any(marker in text for marker in _PASTE_MARKERS):
+        return True
+    head = text[:120]
+    if any(hint in head for hint in _CODE_HINTS):
+        return True
+    return len(text) > _MAX_CORRECTION_LEN
 
 
 def _extract_directive(text: str) -> str | None:
@@ -172,7 +188,7 @@ def _repeated_corrections(
     by_cwd: dict[str, dict] = defaultdict(_new_slot)
     for row in rows:
         text = row["text"]
-        if not text:
+        if not text or _looks_like_paste(text):
             continue
         directive = _extract_directive(text)
         if not (directive or CORRECTION_PATTERNS.search(text)):

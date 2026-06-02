@@ -33,6 +33,7 @@ uv run --script retroscope.py standup
 uv run --script retroscope.py search "auth"
 uv run --script retroscope.py tips
 uv run --script retroscope.py cost-tips
+uv run --script retroscope.py improve --since 7d --stable-days 7
 uv run --script retroscope.py status
 uv run --script retroscope.py reindex
 ```
@@ -116,6 +117,29 @@ uv run --script retroscope.py reindex
 - 消費量の多いセッションのランキング
 - ツール別呼び出し数・Bash 多用・Agent 多用の検出
 - 具体的なコスト削減アクション
+
+---
+
+### `/retroscope-improve` — CLAUDE.md 改善提案
+
+過去セッションの「つまずき」（繰り返し発生したエラー・繰り返されたユーザーの軌道修正）を検出し、`CLAUDE.md` に書くべきルール候補を提案します。「毎回同じ修正指示をしている」知識を、常設の指示として定着させるためのコマンドです。
+
+```
+/retroscope-improve                       # 過去 7 日間（デフォルト）
+/retroscope-improve --since 14d           # 過去 2 週間
+/retroscope-improve --stable-days 7       # 直近 7 日を除外（障害対応ノイズを回避）
+/retroscope-improve --focus errors        # 繰り返しエラーのみ
+/retroscope-improve --focus corrections   # 繰り返しの軌道修正のみ
+/retroscope-improve --project myrepo      # 特定プロジェクトに絞る
+```
+
+**出力例**
+
+- プロジェクト（`cwd`）別のつまずき一覧
+- 対象となる `CLAUDE.md` のパスとルール候補
+- 各提案に対応する公式ドキュメントへのリンク
+
+> 提案はヒューリスティックです。ファイルへの自動書き込みは行わないので、内容を確認のうえ手動で取り込んでください。
 
 ---
 

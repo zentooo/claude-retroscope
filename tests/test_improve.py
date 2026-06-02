@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import ingest  # noqa: E402
 import paths  # noqa: E402
 import store  # noqa: E402
-from improve import analyze_friction, format_improve  # noqa: E402
+from improve import _looks_like_paste, analyze_friction, format_improve  # noqa: E402
 
 
 def _ts(hours_ago: float) -> str:
@@ -102,6 +102,51 @@ def test_format_improve_output(friction_projects):
     assert "Improvement Suggestions" in output
     assert "CLAUDE.md" in output
     assert "vitest" in output
+
+
+def test_looks_like_paste_filters_noise():
+    diff = "diff --git a/x.md b/x.md index 96f6e08..1b91f66 100644 use a not b"
+    code = '"""module""" from __future__ import annotations use a not b'
+    assert _looks_like_paste(diff)
+    assert _looks_like_paste(code)
+    assert not _looks_like_paste("No, use vitest instead of jest please")
+
+
+def test_pasted_diff_not_counted_as_correction(tmp_path, monkeypatch):
+    cwd = "/tmp/paste-proj"
+    proj_dir = tmp_path / "projects" / "-tmp-paste-proj"
+    proj_dir.mkdir(parents=True)
+    # A pasted diff that happens to contain "not" — must not become a signal.
+    lines = [
+        {
+            "type": "user",
+            "timestamp": _ts(20),
+            "cwd": cwd,
+            "gitBranch": "main",
+            "message": {
+                "role": "user",
+                "content": "diff --git a/a.py b/a.py use jest not vitest here",
+            },
+        },
+        {
+            "type": "user",
+            "timestamp": _ts(19),
+            "cwd": cwd,
+            "gitBranch": "main",
+            "message": {
+                "role": "user",
+                "content": "diff --git a/b.py b/b.py use jest not vitest here",
+            },
+        },
+    ]
+    (proj_dir / "sess-p.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
+    monkeypatch.setenv("RETROSCOPE_DATA_DIR", str(tmp_path / "retroscope"))
+    monkeypatch.setattr(paths, "projects_dir", lambda: tmp_path / "projects")
+    monkeypatch.setattr(ingest, "projects_dir", paths.projects_dir)
+
+    ingest.ingest_all()
+    conn = store.ensure_db()
+    assert analyze_friction(conn, since="7d", focus="corrections") == []
 
 
 def test_stable_days_excludes_recent(friction_projects):
