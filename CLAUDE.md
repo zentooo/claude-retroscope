@@ -60,4 +60,4 @@ Data flow: `JSONL logs → parser → ingest → SQLite → queries → formatte
 - Default is always offline / CLI logs only; `--include-subagents` is the explicit opt-in everywhere it appears.
 - Tests use `monkeypatch` to redirect `projects_dir` and set `RETROSCOPE_DATA_DIR` to a tmp dir, then ingest `tests/fixtures/sample.jsonl`. Follow that pattern for new ingest/query tests rather than touching the real `~/.claude` or `~/.retroscope`.
 
-See `claude-retroscope.md` for the full design doc and phase roadmap (Phase 1/2 done; Phase 1.5 Desktop index merge and Phase 3 `improve`/`--llm` mode pending).
+Phase roadmap: Phase 1/2 done; Phase 1.5 Desktop index merge and Phase 3 `improve`/`--llm` mode pending.

@@ -166,5 +166,3 @@ uv run --script retroscope.py status
 - ⏳ Phase 1.5: Desktop `local_*.json` インデックスの結合
 - ✅ Phase 2: token_usage 集計、session_metrics、tips、cost-tips、FTS5 検索
 - ⏳ Phase 3+: improve、`--llm` モード
-
-詳細な設計ドキュメントは [claude-retroscope.md](./claude-retroscope.md) を参照してください。
