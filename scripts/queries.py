@@ -262,6 +262,100 @@ def token_totals_by_day(
     return [dict(r) for r in rows]
 
 
+def tool_usage_totals(
+    conn: sqlite3.Connection,
+    since_iso: str,
+    *,
+    include_subagents: bool = False,
+) -> list[dict]:
+    subagent_clause = "" if include_subagents else "AND s.is_subagent = 0"
+    rows = conn.execute(
+        f"""
+        SELECT e.tool_name, COUNT(*) AS calls
+        FROM events e
+        JOIN sessions s ON s.session_id = e.session_id
+        WHERE e.event_type = 'tool_use'
+          AND e.tool_name IS NOT NULL
+          AND s.ended_at >= ?
+          {subagent_clause}
+        GROUP BY e.tool_name
+        ORDER BY calls DESC
+        LIMIT 15
+        """,
+        (since_iso,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def bash_heavy_sessions(
+    conn: sqlite3.Connection,
+    since_iso: str,
+    *,
+    include_subagents: bool = False,
+    min_bash_calls: int = 20,
+    min_bash_ratio: float = 0.45,
+) -> list[dict]:
+    subagent_clause = "" if include_subagents else "AND s.is_subagent = 0"
+    rows = conn.execute(
+        f"""
+        SELECT
+          s.session_id, s.cwd, s.title,
+          SUM(CASE WHEN e.tool_name = 'Bash' THEN 1 ELSE 0 END) AS bash_calls,
+          COUNT(*) AS total_calls,
+          SUM(CASE
+            WHEN e.tool_name = 'Bash'
+              AND (e.tool_input LIKE '%"cat %'
+                OR e.tool_input LIKE '%"head %'
+                OR e.tool_input LIKE '%"tail %'
+                OR e.tool_input LIKE '% cat %'
+                OR e.tool_input LIKE '% head %'
+                OR e.tool_input LIKE '% tail %')
+            THEN 1 ELSE 0 END) AS file_read_bash
+        FROM events e
+        JOIN sessions s ON s.session_id = e.session_id
+        WHERE e.event_type = 'tool_use'
+          AND s.ended_at >= ?
+          {subagent_clause}
+        GROUP BY s.session_id
+        HAVING bash_calls >= ?
+           AND CAST(bash_calls AS REAL) / NULLIF(total_calls, 0) >= ?
+        ORDER BY bash_calls DESC
+        LIMIT 6
+        """,
+        (since_iso, min_bash_calls, min_bash_ratio),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def agent_heavy_sessions(
+    conn: sqlite3.Connection,
+    since_iso: str,
+    *,
+    include_subagents: bool = False,
+    min_agent_calls: int = 5,
+) -> list[dict]:
+    subagent_clause = "" if include_subagents else "AND s.is_subagent = 0"
+    rows = conn.execute(
+        f"""
+        SELECT
+          s.session_id, s.cwd, s.title,
+          COUNT(*) AS agent_calls
+        FROM events e
+        JOIN sessions s ON s.session_id = e.session_id
+        WHERE e.event_type = 'tool_use'
+          AND e.tool_name = 'Agent'
+          AND s.ended_at >= ?
+          {subagent_clause}
+        GROUP BY s.session_id
+        HAVING agent_calls >= ?
+        ORDER BY agent_calls DESC
+        LIMIT 6
+        """,
+        (since_iso, min_agent_calls),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def _snippet(text: str, tokens: list[str], max_len: int = 200) -> str:
     snippet = text.strip().replace("\n", " ")
     if len(snippet) <= max_len:

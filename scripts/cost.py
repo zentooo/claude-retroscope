@@ -8,9 +8,17 @@ from typing import Any
 
 from guidelines import Guideline, get as get_guideline
 from paths import format_path
-from queries import _iso, parse_period, token_totals_by_day, token_totals_by_session
+from queries import (
+    _iso,
+    agent_heavy_sessions,
+    bash_heavy_sessions,
+    parse_period,
+    token_totals_by_day,
+    token_totals_by_session,
+    tool_usage_totals,
+)
 
-FOCUS_AREAS = frozenset({"cache", "sessions", "skills", "subagents"})
+FOCUS_AREAS = frozenset({"cache", "sessions", "skills", "subagents", "tools"})
 
 
 @dataclass
@@ -50,6 +58,7 @@ def analyze_cost_tips(
             "sessions": {"long_sessions", "daily"},
             "skills": {"skills"},
             "subagents": {"subagents"},
+            "tools": {"bash_heavy", "agent_heavy"},
         }
         return category in mapping.get(focus_norm, set())
 
@@ -197,6 +206,57 @@ def analyze_cost_tips(
                 )
             )
 
+    # Bash-heavy sessions
+    if include("bash_heavy"):
+        gl = get_guideline("bash-over-read")
+        for row in bash_heavy_sessions(
+            conn, since_iso, include_subagents=include_subagents
+        ):
+            label = row["title"] or row["session_id"][:8]
+            bash_pct = int(row["bash_calls"] * 100 / max(row["total_calls"], 1))
+            detail = gl.recommendation
+            if row["file_read_bash"]:
+                detail = (
+                    f"{row['file_read_bash']} Bash call(s) used cat/head/tail — "
+                    f"consider Read instead. " + detail
+                )
+            tips.append(
+                CostTip(
+                    category="bash_heavy",
+                    severity=gl.default_severity,
+                    message=(
+                        f"Bash-heavy session «{label}» — "
+                        f"{row['bash_calls']} Bash calls ({bash_pct}% of {row['total_calls']} total)"
+                    ),
+                    detail=detail,
+                    session_id=row["session_id"],
+                    cwd=row["cwd"],
+                    guideline=gl,
+                )
+            )
+
+    # Agent-heavy sessions
+    if include("agent_heavy"):
+        gl = get_guideline("agent-tool-cost")
+        for row in agent_heavy_sessions(
+            conn, since_iso, include_subagents=include_subagents
+        ):
+            label = row["title"] or row["session_id"][:8]
+            tips.append(
+                CostTip(
+                    category="agent_heavy",
+                    severity=gl.default_severity,
+                    message=(
+                        f"Many Agent spawns in «{label}» — "
+                        f"{row['agent_calls']} Agent tool calls"
+                    ),
+                    detail=gl.recommendation,
+                    session_id=row["session_id"],
+                    cwd=row["cwd"],
+                    guideline=gl,
+                )
+            )
+
     severity_order = {"high": 0, "medium": 1, "low": 2}
     tips.sort(key=lambda t: severity_order.get(t.severity, 9))
     return tips[:12]
@@ -235,6 +295,19 @@ def format_cost_tips(
                 f"| {(row['cache_read_tokens'] or 0):,} "
                 f"| {(row['cache_create_tokens'] or 0):,} |"
             )
+        lines.append("")
+
+    tool_totals = tool_usage_totals(conn, since_iso, include_subagents=include_subagents)
+    if tool_totals:
+        total_calls = sum(r["calls"] for r in tool_totals)
+        lines.append("### Tool call breakdown")
+        lines.append("")
+        lines.append("| Tool | Calls | % |")
+        lines.append("|------|------:|--:|")
+        for row in tool_totals:
+            pct = row["calls"] * 100 // max(total_calls, 1)
+            lines.append(f"| {row['tool_name']} | {row['calls']:,} | {pct}% |")
+        lines.append(f"| **Total** | **{total_calls:,}** | 100% |")
         lines.append("")
 
     session_totals = token_totals_by_session(

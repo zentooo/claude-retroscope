@@ -184,6 +184,43 @@ CATALOG: dict[str, Guideline] = {g.id: g for g in [
         default_severity="medium",
     ),
     Guideline(
+        id="bash-over-read",
+        category="tools",
+        title="Use Read/Edit instead of Bash for file operations",
+        recommendation=(
+            "Prefer the Read tool over `cat`/`head`/`tail` in Bash, "
+            "and Edit/Write over `sed`/`awk`. "
+            "Dedicated file tools produce cleaner diffs and consume fewer context tokens."
+        ),
+        detail=(
+            "Bash commands like `cat file` return raw file content as tool output, "
+            "which is included verbatim in the context window. "
+            "The Read tool renders the same content more compactly and lets Claude "
+            "reference line numbers without re-reading. "
+            "High Bash ratios with file-read patterns are a signal to switch tools."
+        ),
+        source_url=f"{_BASE}#use-the-right-tools",
+        default_severity="medium",
+    ),
+    Guideline(
+        id="agent-tool-cost",
+        category="tools",
+        title="Each Agent tool call spawns a new context — scope them narrowly",
+        recommendation=(
+            "Tell Agent calls exactly what to look for and where. "
+            "Many broad Agent calls multiply token cost: each spawns its own context window "
+            "that re-reads shared files independently."
+        ),
+        detail=(
+            "Agent tool calls are additive: N agents = N independent context windows. "
+            "A session with 10+ Agent calls is likely re-reading the same files repeatedly. "
+            "Prefer targeted queries ('look only in src/auth/') over open-ended ones, "
+            "or consolidate multiple investigations into one scoped subagent."
+        ),
+        source_url=f"{_BASE}#use-subagents-for-investigation",
+        default_severity="medium",
+    ),
+    Guideline(
         id="compact-context",
         category="cost",
         title="Use /compact to reduce cache creation mid-session",
