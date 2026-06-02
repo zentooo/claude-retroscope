@@ -257,6 +257,41 @@ CATALOG: dict[str, Guideline] = {g.id: g for g in [
         default_severity="medium",
     ),
     Guideline(
+        id="encode-corrections",
+        category="instructions",
+        title="Encode recurring corrections into CLAUDE.md",
+        recommendation=(
+            "When you correct Claude the same way across sessions, promote that correction "
+            "into CLAUDE.md (or a rule file) so it becomes a standing instruction instead of "
+            "something you re-explain every time."
+        ),
+        detail=(
+            "Repeated course-corrections in the same project are the clearest signal that a piece "
+            "of project knowledge is missing from your instructions. Capture the rule once — "
+            "e.g. 'This project uses vitest, never jest' — so it isn't rediscovered each session. "
+            "Keep each rule short and imperative so it survives CLAUDE.md pruning."
+        ),
+        source_url=f"{_BASE}#write-an-effective-claudemd",
+        default_severity="high",
+    ),
+    Guideline(
+        id="document-recurring-errors",
+        category="instructions",
+        title="Document recurring build/test failures and their fixes",
+        recommendation=(
+            "If the same build or test error keeps recurring across sessions, add a short note to "
+            "CLAUDE.md describing the trigger and the fix so Claude avoids reintroducing it."
+        ),
+        detail=(
+            "A failure that shows up repeatedly is environment- or convention-specific knowledge "
+            "that isn't written down yet. Record the trigger and the resolution "
+            "(e.g. 'Run `uv run --script`, not `python` — deps are PEP 723 inline') "
+            "so the same dead-end isn't rediscovered each session."
+        ),
+        source_url=f"{_BASE}#give-claude-a-way-to-verify-its-work",
+        default_severity="medium",
+    ),
+    Guideline(
         id="subagent-scope",
         category="cost",
         title="Scope subagents narrowly to avoid runaway token usage",
