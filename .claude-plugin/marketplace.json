@@ -4,8 +4,8 @@
     "name": "zentooo"
   },
   "metadata": {
-    "description": "Analyze Claude Code sessions — standup, search, tips, cost-tips",
-    "version": "0.5.0"
+    "description": "Analyze Claude Code sessions — standup, search, tips, cost-tips, improve",
+    "version": "0.6.0"
   },
   "plugins": [
     {

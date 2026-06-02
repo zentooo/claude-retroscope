@@ -22,6 +22,7 @@ uv run --script retroscope.py standup --since 7d
 uv run --script retroscope.py search "auth"
 uv run --script retroscope.py tips --focus prompting
 uv run --script retroscope.py cost-tips --focus cache
+uv run --script retroscope.py improve --since 7d --stable-days 7
 uv run --script retroscope.py status
 
 # Run the MCP server (stdio); the only dependency beyond stdlib is `mcp>=1.0`
@@ -44,13 +45,14 @@ Data flow: `JSONL logs → parser → ingest → SQLite → queries → formatte
 - **`queries.py`** — all SQL reads: period parsing (`24h`/`3d`/`7d`/ISO), `sessions_in_period`, FTS search with a LIKE fallback when FTS is unavailable, token/tool aggregations, bash-heavy / agent-heavy session detection.
 - **`metrics.py`** — derives `session_metrics` (turns, tool calls, skill re-reads, corrections, etc.) used by tips/cost-tips.
 - **`guidelines.py`** — static catalog of Anthropic best-practice rules + doc links that `tips.py` matches observed patterns against.
-- **`cost.py` / `tips.py` / `standup.py` / `search_fmt.py`** — formatters. They take a connection and return the final human-readable string; the CLI and MCP layers just `print`/return it.
+- **`improve.py`** — friction-signal analysis. Detects recurring build/test errors (`is_error` events grouped by a normalized signature) and repeated user course-corrections (reuses `metrics.CORRECTION_PATTERNS` + best-effort "use X not Y" directive extraction), grouped by project `cwd`, then maps each to a candidate `CLAUDE.md` rule. Offline and **report-only** — never writes files. `--stable-days N` excludes the most recent N days to skip incident-response noise.
+- **`cost.py` / `tips.py` / `standup.py` / `search_fmt.py` / `improve.py`** — formatters. They take a connection and return the final human-readable string; the CLI and MCP layers just `print`/return it.
 
 ## Plugin packaging
 
 - `.claude-plugin/plugin.json` declares the `retroscope` MCP server (`uv run --script ${CLAUDE_PLUGIN_ROOT}/server.py`). MCP config lives here, **not** in a separate project config, to avoid double-loading.
 - `.claude-plugin/marketplace.json` is the marketplace manifest.
-- `skills/*/SKILL.md` define the slash commands (`/retroscope-standup`, `-search`, `-tips`, `-cost-tips`). They are instruction files that call the `mcp__plugin_retroscope_retroscope__*` tools — keep their argument contract in sync with `server.py` tool signatures.
+- `skills/*/SKILL.md` define the slash commands (`/retroscope-standup`, `-search`, `-tips`, `-cost-tips`, `-improve`, `-reindex`). They are instruction files that call the `mcp__plugin_retroscope_retroscope__*` tools — keep their argument contract in sync with `server.py` tool signatures.
 - Bump the `version` in **both** `plugin.json` and `marketplace.json` together.
 
 ## Conventions
@@ -60,4 +62,4 @@ Data flow: `JSONL logs → parser → ingest → SQLite → queries → formatte
 - Default is always offline / CLI logs only; `--include-subagents` is the explicit opt-in everywhere it appears.
 - Tests use `monkeypatch` to redirect `projects_dir` and set `RETROSCOPE_DATA_DIR` to a tmp dir, then ingest `tests/fixtures/sample.jsonl`. Follow that pattern for new ingest/query tests rather than touching the real `~/.claude` or `~/.retroscope`.
 
-Phase roadmap: Phase 1/2 done; Phase 1.5 Desktop index merge and Phase 3 `improve`/`--llm` mode pending.
+Phase roadmap: Phase 1/2 done; Phase 3 `improve` shipped as offline report-only friction analysis. Phase 1.5 Desktop index merge and Phase 3 `--apply` (write rules to CLAUDE.md) / `--llm` rule synthesis still pending.
