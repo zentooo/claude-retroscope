@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent / "scripts"))
 from mcp.server.fastmcp import FastMCP
 
 from cost import format_cost_tips
+from improve import format_improve
 from ingest import ingest_all, reindex
 from search_fmt import format_search
 from standup import format_standup
@@ -89,6 +90,39 @@ def retroscope_cost_tips(
     conn = ensure_db()
     return format_cost_tips(
         conn, since=since, focus=focus, include_subagents=include_subagents
+    )
+
+
+@mcp.tool()
+def retroscope_improve(
+    since: str | None = None,
+    stable_days: int = 0,
+    project: str | None = None,
+    focus: str | None = None,
+    include_subagents: bool = False,
+) -> str:
+    """Suggest CLAUDE.md rules from recurring friction in past sessions (offline).
+
+    Detects recurring build/test errors and repeated user course-corrections,
+    then maps each pattern to a candidate instruction-file rule. Suggestions are
+    heuristic and are never written automatically — review before applying.
+
+    Args:
+        since: Time period like 7d (default), 24h, 3d, or ISO date.
+        stable_days: Exclude the most recent N days to skip incident-response noise.
+        project: Filter by project path or key.
+        focus: Optional category — errors, corrections.
+        include_subagents: Include subagent session logs.
+    """
+    _refresh(include_subagents)
+    conn = ensure_db()
+    return format_improve(
+        conn,
+        since=since,
+        stable_days=stable_days,
+        project=project,
+        focus=focus,
+        include_subagents=include_subagents,
     )
 
 

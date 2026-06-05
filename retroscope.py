@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "scripts"))
 
 from cost import format_cost_tips  # noqa: E402
+from improve import format_improve  # noqa: E402
 from ingest import ingest_all, reindex  # noqa: E402
 from paths import db_path, format_path, projects_dir  # noqa: E402
 from search_fmt import format_search  # noqa: E402
@@ -54,6 +55,23 @@ def cmd_cost_tips(args: argparse.Namespace) -> int:
         format_cost_tips(
             conn,
             since=args.since,
+            focus=args.focus,
+            include_subagents=args.include_subagents,
+        )
+    )
+    return 0
+
+
+def cmd_improve(args: argparse.Namespace) -> int:
+    conn = ensure_db()
+    ingest_all(include_subagents=args.include_subagents)
+    conn = ensure_db()
+    print(
+        format_improve(
+            conn,
+            since=args.since,
+            stable_days=args.stable_days,
+            project=args.project,
             focus=args.focus,
             include_subagents=args.include_subagents,
         )
@@ -142,6 +160,28 @@ def main(argv: list[str] | None = None) -> int:
         help="Limit tips to a category",
     )
     p_cost.set_defaults(func=cmd_cost_tips)
+
+    p_improve = sub.add_parser(
+        "improve", help="Suggest CLAUDE.md rules from recurring friction"
+    )
+    p_improve.add_argument(
+        "--since",
+        default=None,
+        help="Period: 7d (default), 24h, 3d, or ISO date",
+    )
+    p_improve.add_argument(
+        "--stable-days",
+        type=int,
+        default=0,
+        help="Exclude the most recent N days to skip incident-response noise",
+    )
+    p_improve.add_argument("--project", help="Filter by project path or key")
+    p_improve.add_argument(
+        "--focus",
+        choices=["errors", "corrections"],
+        help="Limit signals to a category",
+    )
+    p_improve.set_defaults(func=cmd_improve)
 
     sub.add_parser("reindex", help="Rebuild index from JSONL").set_defaults(
         func=cmd_reindex
