@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Analyze Claude Code sessions — standup, search, tips, cost-tips, improve",
-    "version": "0.6.0"
+    "version": "1.0.0"
   },
   "plugins": [
     {
