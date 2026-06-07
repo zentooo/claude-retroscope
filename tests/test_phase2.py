@@ -12,6 +12,7 @@ import paths  # noqa: E402
 import store  # noqa: E402
 from cost import format_cost_tips  # noqa: E402
 from parser import parse_jsonl_line  # noqa: E402
+from queries import tool_usage_totals  # noqa: E402
 from tips import analyze_tips, format_tips  # noqa: E402
 
 
@@ -98,3 +99,19 @@ def test_tips_format(fixture_projects):
     conn = store.ensure_db()
     output = format_tips(conn, since="7d")
     assert "Workflow Tips" in output
+
+
+def test_tool_usage_totals_excludes_retroscope(fixture_projects):
+    ingest.ingest_all()
+    conn = store.ensure_db()
+    # Insert a fake retroscope tool_use event into the session
+    conn.execute(
+        """
+        INSERT INTO events (session_id, event_type, tool_name, timestamp)
+        VALUES ('sess-test-001', 'tool_use', 'mcp__plugin_retroscope_retroscope__retroscope_standup', '2026-06-01T10:00:08.000Z')
+        """
+    )
+    conn.commit()
+    rows = tool_usage_totals(conn, since_iso="2026-01-01T00:00:00")
+    tool_names = [r["tool_name"] for r in rows]
+    assert not any("mcp__plugin_retroscope_" in name for name in tool_names)
