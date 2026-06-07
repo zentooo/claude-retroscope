@@ -276,6 +276,7 @@ def tool_usage_totals(
         JOIN sessions s ON s.session_id = e.session_id
         WHERE e.event_type = 'tool_use'
           AND e.tool_name IS NOT NULL
+          AND e.tool_name NOT LIKE 'mcp__plugin_retroscope_%'
           AND s.ended_at >= ?
           {subagent_clause}
         GROUP BY e.tool_name
