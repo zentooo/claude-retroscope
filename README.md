@@ -48,7 +48,7 @@ uv run --script retroscope.py reindex
 
 ### `/retroscope-standup` — 作業レポート
 
-直近のセッションを集計し、プロジェクト別に何をやったかをまとめます。朝会・週次レビュー前に使うと便利です。
+直近のセッションを集計し、プロジェクト別の作業サマリー・未完了セッションのハイライト・セッション再開コマンド (`claude --resume <id>`) を出力します。朝会・週次レビュー前に使うと便利です。
 
 ```
 /retroscope-standup              # 過去 24 時間（デフォルト）
@@ -56,33 +56,22 @@ uv run --script retroscope.py reindex
 /retroscope-standup --since 3d   # 過去 3 日間
 ```
 
-**出力例**
-
-- プロジェクト別の作業サマリー
-- 未完了セッションのハイライト
-- セッション再開コマンド (`claude --resume <id>`)
-
 ---
 
 ### `/retroscope-search` — キーワード検索
 
-過去セッションの内容を全文検索します。「あのとき auth まわりで何やったっけ？」という場面で使います。
+過去セッションの内容を全文検索します。「あのとき auth まわりで何やったっけ？」という場面で使います。マッチしたセッション一覧（プロジェクト・日時付き）とセッション再開コマンド (`cd <dir> && claude --resume <id>`) を返します。
 
 ```
 /retroscope-search auth
 /retroscope-search "migration schema"
 ```
 
-**出力例**
-
-- マッチしたセッション一覧（プロジェクト・日時付き）
-- セッション再開コマンド (`cd <dir> && claude --resume <id>`)
-
 ---
 
 ### `/retroscope-tips` — ワークフロー改善ヒント
 
-セッション履歴を分析し、Anthropic 公式ベストプラクティスに基づいた改善提案を出します。
+セッション履歴を分析し、Anthropic 公式ベストプラクティスに基づいた改善提案を重要度別に出します。各ヒントには対応する公式ドキュメントへのリンクが付きます。
 
 ```
 /retroscope-tips                          # 過去 24 時間（デフォルト）
@@ -93,16 +82,11 @@ uv run --script retroscope.py reindex
 /retroscope-tips --focus planning         # プランモードの使い方
 ```
 
-**出力例**
-
-- 重要度別のヒント一覧
-- 各ヒントに対応する公式ドキュメントへのリンク
-
 ---
 
 ### `/retroscope-cost-tips` — トークンコスト分析
 
-トークン使用パターンを分析し、コスト削減の具体的な提案を出します。
+トークン使用パターンを分析し、コスト削減の具体的な提案を出します。日別使用量テーブル・消費量の多いセッションのランキング・Bash 多用や Agent 多用の検出なども含まれます。
 
 ```
 /retroscope-cost-tips                     # 過去 24 時間（デフォルト）
@@ -113,18 +97,11 @@ uv run --script retroscope.py reindex
 /retroscope-cost-tips --focus subagents   # サブエージェントのコスト
 ```
 
-**出力例**
-
-- 日別トークン使用量テーブル
-- 消費量の多いセッションのランキング
-- ツール別呼び出し数・Bash 多用・Agent 多用の検出
-- 具体的なコスト削減アクション
-
 ---
 
 ### `/retroscope-improve` — CLAUDE.md 改善提案
 
-過去セッションの「つまずき」（繰り返し発生したエラー・繰り返されたユーザーの軌道修正）を検出し、`CLAUDE.md` に書くべきルール候補を提案します。「毎回同じ修正指示をしている」知識を、常設の指示として定着させるためのコマンドです。
+過去セッションの「つまずき」（繰り返し発生したエラー・繰り返されたユーザーの軌道修正）を検出し、`CLAUDE.md` に書くべきルール候補をプロジェクト（`cwd`）別に提案します。「毎回同じ修正指示をしている」知識を、常設の指示として定着させるためのコマンドです。
 
 ```
 /retroscope-improve                       # 過去 7 日間（デフォルト）
@@ -134,12 +111,6 @@ uv run --script retroscope.py reindex
 /retroscope-improve --focus corrections   # 繰り返しの軌道修正のみ
 /retroscope-improve --project myrepo      # 特定プロジェクトに絞る
 ```
-
-**出力例**
-
-- プロジェクト（`cwd`）別のつまずき一覧
-- 対象となる `CLAUDE.md` のパスとルール候補
-- 各提案に対応する公式ドキュメントへのリンク
 
 > 提案はヒューリスティックです。ファイルへの自動書き込みは行わないので、内容を確認のうえ手動で取り込んでください。
 
