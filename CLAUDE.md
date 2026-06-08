@@ -17,16 +17,16 @@ It ships two surfaces over the same core logic:
 .venv/bin/pytest -q
 
 # Run the CLI standalone (PEP 723 inline-script deps, run via uv)
-uv run --script retroscope.py reindex      # build/refresh index — required once before first standalone use
-uv run --script retroscope.py standup --since 7d
-uv run --script retroscope.py search "auth"
-uv run --script retroscope.py tips --focus prompting
-uv run --script retroscope.py cost-tips --focus cache
-uv run --script retroscope.py improve --since 7d --stable-days 7
-uv run --script retroscope.py status
+uv run retroscope.py reindex      # build/refresh index — required once before first standalone use
+uv run retroscope.py standup --since 7d
+uv run retroscope.py search "auth"
+uv run retroscope.py tips --focus prompting
+uv run retroscope.py cost-tips --focus cache
+uv run retroscope.py improve --since 7d --stable-days 7
+uv run retroscope.py status
 
 # Run the MCP server (stdio); the only dependency beyond stdlib is `mcp>=1.0`
-uv run --script server.py
+uv run server.py
 ```
 
 Both entrypoints carry a `# /// script` PEP 723 header declaring dependencies; there is no requirements file or lockfile. Tests have no external deps and run against `.venv/bin/pytest`.
@@ -50,7 +50,7 @@ Data flow: `JSONL logs → parser → ingest → SQLite → queries → formatte
 
 ## Plugin packaging
 
-- `.claude-plugin/plugin.json` declares the `retroscope` MCP server (`uv run --script ${CLAUDE_PLUGIN_ROOT}/server.py`). MCP config lives here, **not** in a separate project config, to avoid double-loading.
+- `.claude-plugin/plugin.json` declares the `retroscope` MCP server (`uv run ${CLAUDE_PLUGIN_ROOT}/server.py`). MCP config lives here, **not** in a separate project config, to avoid double-loading.
 - `.claude-plugin/marketplace.json` is the marketplace manifest.
 - `skills/*/SKILL.md` define the slash commands (`/retroscope-standup`, `-search`, `-tips`, `-cost-tips`, `-improve`, `-reindex`). They are instruction files that call the `mcp__plugin_retroscope_retroscope__*` tools — keep their argument contract in sync with `server.py` tool signatures.
 - Bump the `version` in **both** `plugin.json` and `marketplace.json` together.

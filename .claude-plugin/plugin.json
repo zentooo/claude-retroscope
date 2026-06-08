@@ -1,6 +1,6 @@
 {
   "name": "retroscope",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Structured analysis and work reports from Claude Code session history",
   "author": {
     "name": "zentooo"
@@ -8,7 +8,7 @@
   "mcpServers": {
     "retroscope": {
       "command": "uv",
-      "args": ["run", "--script", "${CLAUDE_PLUGIN_ROOT}/server.py"]
+      "args": ["run", "${CLAUDE_PLUGIN_ROOT}/server.py"]
     }
   }
 }
